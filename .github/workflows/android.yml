@@ -1,24 +1,24 @@
+
 name: Build AlShaikha APK
 
 on:
   workflow_dispatch:
   push:
-    paths:
-      - '**.zip'
-      - '.github/workflows/android.yml'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Prepare project
+      - name: Extract project
         run: |
           mkdir extracted
           ZIP_FILE=$(find . -maxdepth 1 -type f -iname '*.zip' | head -n 1)
           unzip -q "$ZIP_FILE" -d extracted
+          find extracted -maxdepth 4 -name settings.gradle -o -name settings.gradle.kts
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -28,33 +28,37 @@ jobs:
 
       - name: Configure Android SDK
         run: |
-         echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
-         echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
-         echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
-         echo "/usr/local/lib/android/sdk/cmdline-tools/16.0/bin" >> $GITHUB_PATH
-         echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+          echo "/usr/local/lib/android/sdk/cmdline-tools/16.0/bin" >> "$GITHUB_PATH"
+          echo "/usr/local/lib/android/sdk/platform-tools" >> "$GITHUB_PATH"
 
-      - name: Install Android SDK
+      - name: Accept licenses
         run: |
-         yes | sdkmanager --sdk_root=/usr/local/lib/android/sdk --licenses
-         sdkmanager --sdk_root=/usr/local/lib/android/sdk "platforms;android-35" "build-tools;35.0.0.
+          yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses || true
 
-      - name: Accept Android Licenses
-        run: yes | sdkmanager --licenses
-
-      - name: Install Android SDK
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Install SDK packages
+        run: |
+          sdkmanager --sdk_root="$ANDROID_HOME" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
+      - name: Find Android project
+        id: project
+        run: |
+          PROJECT_DIR=$(dirname "$(find extracted -name settings.gradle -o -name settings.gradle.kts | head -n 1)")
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "Android project: $PROJECT_DIR"
+
       - name: Build APK
-        run: gradle -p extracted/AlShaikha assembleDebug
+        run: gradle -p "${{ steps.project.outputs.dir }}" assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: alshaikha-apk
-          path: extracted/AlShaikha/app/build/outputs/apk/debug/app-debug.apk
+          path: extracted/**/build/outputs/apk/debug/*.apk
+          
